@@ -24,7 +24,6 @@ async function tmdbFetch<T>(path: string, params: Record<string, string | number
   }
 
   const res = await fetch(url.toString(), {
-    // Кеш на сервері. Можеш змінити за потреби.
     next: { revalidate: 3600 },
   });
 

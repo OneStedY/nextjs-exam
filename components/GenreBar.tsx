@@ -20,7 +20,6 @@ export function GenreBar({
   activeGenreId: number | null;
   query: string;
 }) {
-  // Якщо є search query, жанр не активний (пріоритет пошуку)
   const isSearching = query.trim().length >= 2;
 
   return (

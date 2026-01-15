@@ -20,7 +20,7 @@ export function SearchBar() {
   const initial = searchParams.get("q") ?? "";
   const [value, setValue] = useState(initial);
 
-  // Якщо URL змінився ззовні (клік жанрів/пагінації) — синхронізуємо інпут
+
   useEffect(() => {
     setValue(initial);
   }, [initial]);
