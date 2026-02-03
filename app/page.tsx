@@ -1,66 +1,85 @@
-import { tmdb } from "@/lib/tmdb";
-import { ErrorBox } from "@/components/ErrorBox";
-import { GenreBar } from "@/components/GenreBar";
+// app/page.tsx
 import { MoviesGrid } from "@/components/MoviesGrid";
-import { Pagination } from "@/components/Pagination";
-import { SearchBar } from "@/components/SearchBar";
+import Pagination from "@/components/Pagination";
+import type { Movie } from "@/types/tmdb";
 
-function toInt(value: string | undefined, fallback: number) {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+type SP = Record<string, string | string[] | undefined>;
+
+function getStr(sp: SP | undefined, key: string): string | undefined {
+    const v = sp?.[key];
+    return Array.isArray(v) ? v[0] : v;
 }
 
-export default async function MoviesPage({
-  searchParams,
-}: {
-  searchParams: Record<string, string | string[] | undefined>;
-}) {
-  const page = Array.isArray(searchParams.page)
-    ? toInt(searchParams.page[0], 1)
-    : toInt(searchParams.page, 1);
+function getInt(sp: SP | undefined, key: string, fallback: number): number {
+    const raw = getStr(sp, key);
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
 
-  const genre = Array.isArray(searchParams.genre)
-    ? toInt(searchParams.genre[0], 0)
-    : toInt(searchParams.genre, 0);
+type TmdbListResponse<T> = {
+    page: number;
+    results: T[];
+    total_pages: number;
+    total_results: number;
+};
 
-  const q = Array.isArray(searchParams.q) ? (searchParams.q[0] ?? "") : (searchParams.q ?? "");
-  const query = q.trim();
+async function tmdbFetch<T>(
+    path: string,
+    params: Record<string, string | number | undefined>
+): Promise<T> {
+    const apiKey = process.env.TMDB_API_KEY;
+    if (!apiKey) throw new Error("TMDB_API_KEY is missing in .env");
 
-  try {
-    const [genres, moviesData] = await Promise.all([
-      tmdb.getGenres(),
-      query.length >= 2
-        ? tmdb.searchMovies(query, page)
-        : genre
-          ? tmdb.getMoviesByGenre(genre, page)
-          : tmdb.getMovies(page),
-    ]);
+    const url = new URL(`https://api.themoviedb.org/3${path}`);
+    url.searchParams.set("api_key", apiKey);
+    url.searchParams.set("language", "en-US");
 
-    const sp = new URLSearchParams();
-    if (query.length >= 2) sp.set("q", query);
-    if (!query && genre) sp.set("genre", String(genre));
-    sp.set("page", String(page));
+    for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || v === null || v === "") continue;
+        url.searchParams.set(k, String(v));
+    }
+
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    if (!res.ok) throw new Error(`TMDB error ${res.status}`);
+    return (await res.json()) as T;
+}
+
+export default async function Page({ searchParams }: { searchParams?: SP }) {
+    const page = getInt(searchParams, "page", 1);
+    const query = (getStr(searchParams, "q") ?? "").trim();
+
+    const data: TmdbListResponse<Movie> = query
+        ? await tmdbFetch<TmdbListResponse<Movie>>("/search/movie", {
+            query,
+            page,
+            include_adult: "false",
+        })
+        : await tmdbFetch<TmdbListResponse<Movie>>("/movie/popular", {
+            page,
+        });
+
+    const movies = data.results ?? [];
+    const totalPages = Math.max(1, Math.min(data.total_pages ?? 1, 500));
 
     return (
-      <div className="space-y-6">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <h1 className="text-xl font-semibold tracking-tight">Movies</h1>
-            <div className="w-full lg:max-w-md">
-              <SearchBar />
-              <div className="mt-1 text-xs text-slate-500">Tip: type at least 2 characters to search</div>
-            </div>
-          </div>
+        <main className="space-y-6 p-4">
+            {/* Server-side поиск через GET */}
+            <form method="GET" className="flex gap-2">
+                <input
+                    name="q"
+                    defaultValue={query}
+                    placeholder="Search movies..."
+                    className="flex-1 rounded border px-3 py-2"
+                />
+                <input type="hidden" name="page" value="1" />
+                <button type="submit" className="rounded bg-black px-4 py-2 text-white">
+                    Search
+                </button>
+            </form>
 
-          <GenreBar genres={genres} activeGenreId={genre || null} query={query} />
-        </div>
+            <MoviesGrid movies={movies} />
 
-        <MoviesGrid movies={moviesData.results} />
-
-        <Pagination page={moviesData.page} totalPages={moviesData.total_pages} searchParams={sp} />
-      </div>
+            <Pagination searchParams={searchParams} page={page} totalPages={totalPages} />
+        </main>
     );
-  } catch (e: any) {
-    return <ErrorBox message={e?.message ?? "Failed to load movies"} />;
-  }
 }

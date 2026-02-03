@@ -1,43 +1,58 @@
+// components/Pagination.tsx
 import Link from "next/link";
 
-function hrefWithPage(searchParams: URLSearchParams, page: number) {
-  const sp = new URLSearchParams(searchParams.toString());
-  sp.set("page", String(page));
-  const qs = sp.toString();
-  return qs ? `/?${qs}` : "/";
+type SP = Record<string, string | string[] | undefined>;
+
+function buildHref(searchParams: SP | undefined, nextPage: number) {
+  const params = new URLSearchParams();
+
+  if (searchParams) {
+    for (const [k, v] of Object.entries(searchParams)) {
+      if (v == null) continue;
+
+      if (Array.isArray(v)) {
+        // сохраняем мульти-параметры, если есть
+        params.delete(k);
+        v.forEach((vv) => params.append(k, vv));
+      } else {
+        params.set(k, v);
+      }
+    }
+  }
+
+  params.set("page", String(nextPage));
+  return `?${params.toString()}`;
 }
 
-export function Pagination({
-  page,
-  totalPages,
-  searchParams,
-}: {
+export default function Pagination({
+                                     searchParams,
+                                     page,
+                                     totalPages,
+                                   }: {
+  searchParams?: SP;
   page: number;
   totalPages: number;
-  searchParams: URLSearchParams;
 }) {
-  if (totalPages <= 1) return null;
-
-  const prev = Math.max(1, page - 1);
-  const next = Math.min(totalPages, page + 1);
-
-  const btn = (disabled: boolean) =>
-    `rounded-xl border bg-white px-3 py-2 text-sm ${disabled ? "opacity-50 pointer-events-none" : "hover:bg-slate-100"}`;
+  const prevPage = Math.max(1, page - 1);
+  const nextPage = Math.min(totalPages, page + 1);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="text-sm text-slate-600">
-        Page <span className="font-medium text-slate-900">{page}</span> of {totalPages}
-      </div>
+      <nav aria-label="Pagination" style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {page > 1 ? (
+            <Link href={buildHref(searchParams, prevPage)}>Prev</Link>
+        ) : (
+            <span style={{ opacity: 0.5 }}>Prev</span>
+        )}
 
-      <div className="flex items-center gap-2">
-        <Link className={btn(page <= 1)} href={hrefWithPage(searchParams, prev)} aria-disabled={page <= 1}>
-          ← Prev
-        </Link>
-        <Link className={btn(page >= totalPages)} href={hrefWithPage(searchParams, next)} aria-disabled={page >= totalPages}>
-          Next →
-        </Link>
-      </div>
-    </div>
+        <span>
+        {page} / {totalPages}
+      </span>
+
+        {page < totalPages ? (
+            <Link href={buildHref(searchParams, nextPage)}>Next</Link>
+        ) : (
+            <span style={{ opacity: 0.5 }}>Next</span>
+        )}
+      </nav>
   );
 }
