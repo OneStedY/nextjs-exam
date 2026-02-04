@@ -1,20 +1,10 @@
-// app/page.tsx
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { MoviesGrid } from "@/components/MoviesGrid";
 import Pagination from "@/components/Pagination";
 import type { Movie } from "@/types/tmdb";
-
-type SP = Record<string, string | string[] | undefined>;
-
-function getStr(sp: SP | undefined, key: string): string | undefined {
-    const v = sp?.[key];
-    return Array.isArray(v) ? v[0] : v;
-}
-
-function getInt(sp: SP | undefined, key: string, fallback: number): number {
-    const raw = getStr(sp, key);
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
-}
 
 type TmdbListResponse<T> = {
     page: number;
@@ -23,51 +13,65 @@ type TmdbListResponse<T> = {
     total_results: number;
 };
 
-async function tmdbFetch<T>(
-    path: string,
-    params: Record<string, string | number | undefined>
-): Promise<T> {
-    const apiKey = process.env.TMDB_API_KEY;
-    if (!apiKey) throw new Error("TMDB_API_KEY is missing in .env");
-
-    const url = new URL(`https://api.themoviedb.org/3${path}`);
-    url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("language", "en-US");
-
-    for (const [k, v] of Object.entries(params)) {
-        if (v === undefined || v === null || v === "") continue;
-        url.searchParams.set(k, String(v));
-    }
-
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) throw new Error(`TMDB error ${res.status}`);
-    return (await res.json()) as T;
+function getPage(sp: ReturnType<typeof useSearchParams>) {
+    const raw = sp.get("page");
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
 }
 
-export default async function Page({ searchParams }: { searchParams?: SP }) {
-    const page = getInt(searchParams, "page", 1);
-    const query = (getStr(searchParams, "q") ?? "").trim();
+function getQuery(sp: ReturnType<typeof useSearchParams>) {
+    return (sp.get("q") ?? "").trim();
+}
 
-    const data: TmdbListResponse<Movie> = query
-        ? await tmdbFetch<TmdbListResponse<Movie>>("/search/movie", {
-            query,
-            page,
-            include_adult: "false",
-        })
-        : await tmdbFetch<TmdbListResponse<Movie>>("/movie/popular", {
-            page,
-        });
+export default function HomePage() {
+    const sp = useSearchParams();
 
-    const movies = data.results ?? [];
-    const totalPages = Math.max(1, Math.min(data.total_pages ?? 1, 500));
+    const page = useMemo(() => getPage(sp), [sp]);
+    const q = useMemo(() => getQuery(sp), [sp]);
+
+    const [movies, setMovies] = useState<Movie[]>([]);
+    const [totalPages, setTotalPages] = useState(1);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const controller = new AbortController();
+
+        async function load() {
+            setLoading(true);
+            setError(null);
+
+            try {
+                // ВАЖНО: не светим TMDB_API_KEY на клиенте.
+                // Поэтому делаем запрос к своему API route:
+                const url = new URL("/api/movies", window.location.origin);
+                url.searchParams.set("page", String(page));
+                if (q) url.searchParams.set("q", q);
+
+                const res = await fetch(url.toString(), { signal: controller.signal });
+                if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+
+                const data = (await res.json()) as TmdbListResponse<Movie>;
+                setMovies(data.results ?? []);
+                setTotalPages(Math.max(1, Math.min(data.total_pages ?? 1, 500)));
+            } catch (e: any) {
+                if (e?.name !== "AbortError") setError(e?.message ?? "Error");
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        load();
+        return () => controller.abort();
+    }, [page, q]);
 
     return (
         <main className="space-y-6 p-4">
-            {/* Server-side поиск через GET */}
+            {/* простой поиск через URL (GET) */}
             <form method="GET" className="flex gap-2">
                 <input
                     name="q"
-                    defaultValue={query}
+                    defaultValue={q}
                     placeholder="Search movies..."
                     className="flex-1 rounded border px-3 py-2"
                 />
@@ -77,9 +81,15 @@ export default async function Page({ searchParams }: { searchParams?: SP }) {
                 </button>
             </form>
 
-            <MoviesGrid movies={movies} />
+            {loading ? (
+                <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600">Loading...</div>
+            ) : error ? (
+                <div className="rounded-2xl border bg-white p-6 text-sm text-red-600">{error}</div>
+            ) : (
+                <MoviesGrid movies={movies} />
+            )}
 
-            <Pagination searchParams={searchParams} page={page} totalPages={totalPages} />
+            <Pagination page={page} totalPages={totalPages} />
         </main>
     );
 }

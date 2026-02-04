@@ -1,58 +1,56 @@
-// components/Pagination.tsx
+"use client";
+
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 
 type SP = Record<string, string | string[] | undefined>;
 
-function buildHref(searchParams: SP | undefined, nextPage: number) {
-  const params = new URLSearchParams();
-
-  if (searchParams) {
-    for (const [k, v] of Object.entries(searchParams)) {
-      if (v == null) continue;
-
-      if (Array.isArray(v)) {
-        // сохраняем мульти-параметры, если есть
-        params.delete(k);
-        v.forEach((vv) => params.append(k, vv));
-      } else {
-        params.set(k, v);
-      }
-    }
-  }
-
-  params.set("page", String(nextPage));
-  return `?${params.toString()}`;
+function buildHref(pathname: string, sp: URLSearchParams, nextPage: number) {
+    const params = new URLSearchParams(sp.toString());
+    params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
 }
 
 export default function Pagination({
-                                     searchParams,
-                                     page,
-                                     totalPages,
+                                       page,
+                                       totalPages,
                                    }: {
-  searchParams?: SP;
-  page: number;
-  totalPages: number;
+    page: number;
+    totalPages: number;
 }) {
-  const prevPage = Math.max(1, page - 1);
-  const nextPage = Math.min(totalPages, page + 1);
+    const router = useRouter();
+    const pathname = usePathname();
+    const sp = useSearchParams();
 
-  return (
-      <nav aria-label="Pagination" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        {page > 1 ? (
-            <Link href={buildHref(searchParams, prevPage)}>Prev</Link>
-        ) : (
-            <span style={{ opacity: 0.5 }}>Prev</span>
-        )}
+    const prevPage = Math.max(1, page - 1);
+    const nextPage = Math.min(totalPages, page + 1);
 
-        <span>
+    const prevHref = useMemo(() => buildHref(pathname, sp, prevPage), [pathname, sp, prevPage]);
+    const nextHref = useMemo(() => buildHref(pathname, sp, nextPage), [pathname, sp, nextPage]);
+
+    return (
+        <nav aria-label="Pagination" style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button
+                disabled={page <= 1}
+                onClick={() => router.push(prevHref, { scroll: false })}
+                style={{ opacity: page <= 1 ? 0.5 : 1 }}
+            >
+                Prev
+            </button>
+
+            <span>
         {page} / {totalPages}
       </span>
 
-        {page < totalPages ? (
-            <Link href={buildHref(searchParams, nextPage)}>Next</Link>
-        ) : (
-            <span style={{ opacity: 0.5 }}>Next</span>
-        )}
-      </nav>
-  );
+            <button
+                disabled={page >= totalPages}
+                onClick={() => router.push(nextHref, { scroll: false })}
+                style={{ opacity: page >= totalPages ? 0.5 : 1 }}
+            >
+                Next
+            </button>
+        </nav>
+    );
 }
